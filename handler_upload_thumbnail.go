@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,6 +58,9 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	base64Thumbnail := base64.StdEncoding.EncodeToString(bytes)
+	dataURL := fmt.Sprintf("data:%v;base64,%v", mediaType, base64Thumbnail)
+
 	newThumbnail := thumbnail{
 		data:      bytes,
 		mediaType: mediaType,
@@ -64,8 +68,8 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	videoThumbnails[videoID] = newThumbnail
 	// why is ThumbnailURL a pointer to a string?
-	newThumnailUrl := fmt.Sprintf("http://localhost:%v/api/thumbnails/%v", 8091, videoID)
-	video.ThumbnailURL = &newThumnailUrl
+	// newThumnailUrl := fmt.Sprintf("http://localhost:%v/api/thumbnails/%v", 8091, videoID)
+	video.ThumbnailURL = &dataURL
 	if err := cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Could not update video in db", err)
 		return
