@@ -1,10 +1,13 @@
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -44,11 +47,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer file.Close()
-	mediaType := header.Header.Get("Content-Type")
 
-	bytes, err := io.ReadAll(file)
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't read file", err)
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse media type header", err)
+		return
+	}
+
+	if mediaType != "image/png" && mediaType != "image/jpeg" {
+		respondWithError(w, http.StatusBadRequest, "Invalid media type", nil)
 		return
 	}
 
@@ -58,15 +65,32 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	base64Thumbnail := base64.StdEncoding.EncodeToString(bytes)
-	dataURL := fmt.Sprintf("data:%v;base64,%v", mediaType, base64Thumbnail)
+	fileExtensionRaw, _ := strings.CutPrefix(mediaType, "image/")
+	fileExtension := strings.ToLower(fileExtensionRaw)
 
-	newThumbnail := thumbnail{
-		data:      bytes,
-		mediaType: mediaType,
+	filePath := filepath.Join(cfg.assetsRoot, fmt.Sprintf("%v.%v", videoID.String(), fileExtension))
+	f, err := os.Create(filePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, fmt.Sprintf("Couldn't create file: %v", filePath), err)
+		return
 	}
+	defer f.Close()
 
-	videoThumbnails[videoID] = newThumbnail
+	if _, err := io.Copy(f, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to write bytes to file", err)
+		return
+	}
+	dataURL := fmt.Sprintf("http://localhost:%v/assets/%v.%v", cfg.port, videoID.String(), fileExtension)
+
+	// base64Thumbnail := base64.StdEncoding.EncodeToString(bytes)
+	// dataURL := fmt.Sprintf("data:%v;base64,%v", mediaType, base64Thumbnail)
+
+	// newThumbnail := thumbnail{
+	// 	data:      bytes,
+	// 	mediaType: mediaType,
+	// }
+
+	// videoThumbnails[videoID] = newThumbnail
 	// why is ThumbnailURL a pointer to a string?
 	// newThumnailUrl := fmt.Sprintf("http://localhost:%v/api/thumbnails/%v", 8091, videoID)
 	video.ThumbnailURL = &dataURL
